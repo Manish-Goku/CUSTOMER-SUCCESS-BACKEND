@@ -12,6 +12,22 @@ import { QueryAssignmentsModule } from './queryAssignments/queryAssignments.modu
 import { IvrWebhooksModule } from './ivrWebhooks/ivrWebhooks.module.js';
 import { KaleyraVoiceModule } from './kaleyraVoice/kaleyraVoice.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { SlaConfigModule } from './slaConfig/slaConfig.module.js';
+import { AgentsModule } from './agents/agents.module.js';
+import { RolesModule } from './roles/roles.module.js';
+import { RefundsModule } from './refunds/refunds.module.js';
+import { AuditsModule } from './audits/audits.module.js';
+import { VideoCallLeadsModule } from './videoCallLeads/videoCallLeads.module.js';
+import { CallCategoriesModule } from './callCategories/callCategories.module.js';
+import { CustomerTimelineModule } from './customerTimeline/customerTimeline.module.js';
+import { AgentFeedbackModule } from './agentFeedback/agentFeedback.module.js';
+import { TicketsModule } from './tickets/tickets.module.js';
+import { SurveysModule } from './surveys/surveys.module.js';
+import { WorkflowsModule } from './workflows/workflows.module.js';
+import { YoutubeLeadsModule } from './youtubeLeads/youtubeLeads.module.js';
+import { CustomerFeedbackModule } from './customerFeedback/customerFeedback.module.js';
+import { ReturnRcaModule } from './returnRca/returnRca.module.js';
+import { AgriConsultancyModule } from './agriConsultancy/agriConsultancy.module.js';
 
 @Module({
   imports: [
@@ -26,6 +42,22 @@ import { NotificationsModule } from './notifications/notifications.module.js';
     IvrWebhooksModule,
     KaleyraVoiceModule,
     NotificationsModule,
+    SlaConfigModule,
+    AgentsModule,
+    RolesModule,
+    RefundsModule,
+    AuditsModule,
+    VideoCallLeadsModule,
+    CallCategoriesModule,
+    CustomerTimelineModule,
+    AgentFeedbackModule,
+    TicketsModule,
+    SurveysModule,
+    WorkflowsModule,
+    YoutubeLeadsModule,
+    CustomerFeedbackModule,
+    ReturnRcaModule,
+    AgriConsultancyModule,
   ],
   controllers: [AppController],
   providers: [AppService],

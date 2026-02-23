@@ -28,6 +28,19 @@ async function bootstrap() {
     .addTag('chat-messages', 'Chat message operations')
     .addTag('chat-templates', 'Chat template / canned response management')
     .addTag('query-assignments', 'Query assignment and agent dispatch')
+    .addTag('tickets', 'Ticket management system')
+    .addTag('ticket-categories', 'Ticket category management')
+    .addTag('ticket-templates', 'Ticket response templates')
+    .addTag('ticket-routing-rules', 'Ticket auto-routing rules')
+    .addTag('survey-templates', 'Survey template and question management')
+    .addTag('survey-campaigns', 'Survey campaign management')
+    .addTag('survey-calls', 'Survey call tracking and analytics')
+    .addTag('agent-feedback', 'Agent feedback and performance')
+    .addTag('workflows', 'Workflow automation engine')
+    .addTag('youtube-leads', 'YouTube lead management')
+    .addTag('customer-feedback', 'Customer feedback tracking')
+    .addTag('return-rca', 'Return root cause analysis')
+    .addTag('agri-consultancy', 'Agricultural consultancy and prescriptions')
     .build();
 
   const document = SwaggerModule.createDocument(app, swagger_config);
