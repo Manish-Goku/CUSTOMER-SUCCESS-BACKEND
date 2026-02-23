@@ -32,25 +32,174 @@ export class ChatIngestionService {
   // --- Webhook Processing ---
 
   async process_webhook(payload: InteraktWebhookDto): Promise<void> {
-    if (payload.type !== 'message_received') {
-      this.logger.log(`Ignoring webhook event type: ${payload.type}`);
+    switch (payload.type) {
+      case 'message_received':
+        return this.process_message_received(payload.data);
+      case 'workflow_response_update':
+        return this.process_workflow_response(payload.data);
+      default:
+        this.logger.log(`Ignoring webhook event type: ${payload.type}`);
+    }
+  }
+
+  // --- Structure 1: message_received ---
+
+  private async process_message_received(
+    data: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    const customer = data?.customer as Record<string, unknown> | undefined;
+    const message = data?.message as Record<string, unknown> | undefined;
+
+    if (!customer || !message) {
+      this.logger.warn('message_received missing customer or message data');
       return;
     }
 
-    const customer = payload.data?.customer;
-    const message = payload.data?.message;
+    // Build canonical phone: country_code (+91) + phone_number (9201053157)
+    const raw_phone = customer.phone_number as string | undefined;
+    const country_code = ((customer.country_code as string) || '').replace('+', '');
+    if (!raw_phone) {
+      this.logger.warn('message_received missing phone_number');
+      return;
+    }
+    const phone_number = raw_phone.startsWith(country_code)
+      ? raw_phone
+      : `${country_code}${raw_phone}`;
 
-    if (!customer?.phone_number || !message) {
-      this.logger.warn('Webhook missing customer phone or message data');
+    // Name is in traits.name
+    const traits = customer.traits as Record<string, unknown> | undefined;
+    const customer_name = (traits?.name as string) || null;
+
+    const interakt_message_id = (message.id as string) || null;
+    const message_content_type = (message.message_content_type as string) || 'Text';
+    const message_type = this.map_content_type(message_content_type);
+    const content = this.extract_message_text(
+      message.message as string | undefined,
+      message_content_type,
+    );
+    const media_url = (message.media_url as string) || null;
+
+    await this.ingest_inbound_message({
+      phone_number,
+      customer_name,
+      interakt_message_id,
+      message_type,
+      content,
+      media_url,
+    });
+  }
+
+  // --- Structure 2: workflow_response_update ---
+
+  private async process_workflow_response(
+    data: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    if (!data) {
+      this.logger.warn('workflow_response_update missing data');
       return;
     }
 
-    const phone_number = customer.phone_number;
-    const interakt_message_id = message.id || null;
-    const customer_name = customer.name || null;
-    const message_type = this.normalize_message_type(message.type);
-    const content = message.text || null;
-    const media_url = message.media_url || null;
+    const customer_name = (data.customer_name as string) || null;
+    const raw_number = (data.customer_number as string) || '';
+    const phone_number = raw_number.replace('+', '');
+
+    if (!phone_number) {
+      this.logger.warn('workflow_response_update missing customer_number');
+      return;
+    }
+
+    const workflow_id = (data.id as string) || null;
+    const steps = (data.data as Array<Record<string, unknown>>) || [];
+
+    if (steps.length === 0) {
+      this.logger.log('workflow_response_update has no steps, skipping');
+      return;
+    }
+
+    // Build a combined text from all Q&A steps
+    const qa_lines: string[] = [];
+    const messages_to_insert: Array<{
+      interakt_message_id: string | null;
+      message_type: 'text' | 'image' | 'document' | 'audio' | 'video';
+      content: string | null;
+      media_url: string | null;
+    }> = [];
+
+    for (const step of steps) {
+      const question = step.question as Record<string, unknown> | undefined;
+      const answer = step.answer as Record<string, unknown> | undefined;
+
+      if (!answer) continue;
+
+      const answer_id = (answer.id as string) || null;
+      const answer_text = (answer.message as string) || null;
+      const answer_media_url = (answer.media_url as string) || null;
+      const answer_content_type = (answer.message_content_type as string) || 'Text';
+      const question_text = (question?.message as string) || '';
+
+      // Build Q&A line for summary
+      if (question_text) {
+        const display_answer = answer_text || answer_content_type || 'media';
+        qa_lines.push(`Q: ${question_text}\nA: ${display_answer}`);
+      }
+
+      messages_to_insert.push({
+        interakt_message_id: answer_id
+          ? `workflow_${workflow_id}_${answer_id}`
+          : null,
+        message_type: this.map_content_type(answer_content_type),
+        content: answer_text,
+        media_url: answer_media_url,
+      });
+    }
+
+    if (messages_to_insert.length === 0) {
+      this.logger.log('workflow_response_update no answers to process');
+      return;
+    }
+
+    // Use the combined Q&A text for AI classification on the first message
+    const combined_text = qa_lines.join('\n\n') || null;
+
+    for (let i = 0; i < messages_to_insert.length; i++) {
+      const msg = messages_to_insert[i];
+      await this.ingest_inbound_message({
+        phone_number,
+        customer_name,
+        interakt_message_id: msg.interakt_message_id,
+        message_type: msg.message_type,
+        content: msg.content,
+        media_url: msg.media_url,
+        // AI classify only on the first message of this batch
+        ai_override_text: i === 0 ? combined_text : null,
+      });
+    }
+
+    this.logger.log(
+      `Processed workflow_response_update: ${messages_to_insert.length} answers from ${phone_number}`,
+    );
+  }
+
+  // --- Shared inbound message ingestion ---
+
+  private async ingest_inbound_message(params: {
+    phone_number: string;
+    customer_name: string | null;
+    interakt_message_id: string | null;
+    message_type: 'text' | 'image' | 'document' | 'audio' | 'video';
+    content: string | null;
+    media_url: string | null;
+    ai_override_text?: string | null;
+  }): Promise<void> {
+    const {
+      phone_number,
+      customer_name,
+      interakt_message_id,
+      message_type,
+      content,
+      media_url,
+      ai_override_text,
+    } = params;
 
     const client = this.supabase_service.getClient();
 
@@ -78,7 +227,6 @@ export class ChatIngestionService {
     let is_new_or_reopened = false;
 
     if (!conversation) {
-      // Create new conversation
       const { data: new_conv, error: insert_error } = await client
         .from('conversations')
         .insert({
@@ -97,7 +245,6 @@ export class ChatIngestionService {
       conversation = new_conv;
       is_new_or_reopened = true;
     } else if (conversation.status === 'resolved') {
-      // Reopen resolved conversation
       const { data: reopened, error: reopen_error } = await client
         .from('conversations')
         .update({ status: 'open', updated_at: new Date().toISOString() })
@@ -117,11 +264,14 @@ export class ChatIngestionService {
     // AI classify first inbound of new/reopened conversation only
     let summary: string | null = null;
     let suggested_team: string | null = null;
+    const text_for_ai = ai_override_text !== undefined
+      ? ai_override_text
+      : content;
 
-    if (is_new_or_reopened && content) {
+    if (is_new_or_reopened && text_for_ai) {
       try {
         const ai_result = await this.chat_ai_service.summarize_and_classify(
-          content,
+          text_for_ai,
           customer_name,
           phone_number,
         );
@@ -194,6 +344,49 @@ export class ChatIngestionService {
     this.logger.log(
       `Processed inbound message for conversation ${conversation.id}`,
     );
+  }
+
+  // --- Helpers: Interakt field mapping ---
+
+  private extract_message_text(
+    raw_message: string | undefined,
+    content_type: string,
+  ): string | null {
+    if (!raw_message) return null;
+
+    // Interactive types have JSON in the message field
+    const interactive_types = [
+      'InteractiveListReply',
+      'InteractiveButtonReply',
+    ];
+
+    if (interactive_types.includes(content_type)) {
+      try {
+        const parsed = JSON.parse(raw_message);
+        // list_reply: { title: "..." }, button_reply: { title: "..." }
+        return (
+          parsed?.list_reply?.title ||
+          parsed?.button_reply?.title ||
+          raw_message
+        );
+      } catch {
+        return raw_message;
+      }
+    }
+
+    return raw_message;
+  }
+
+  private map_content_type(
+    content_type: string,
+  ): 'text' | 'image' | 'document' | 'audio' | 'video' {
+    const lower = content_type.toLowerCase();
+    if (lower === 'image') return 'image';
+    if (lower === 'document') return 'document';
+    if (lower === 'audio') return 'audio';
+    if (lower === 'video') return 'video';
+    // Text, InteractiveListReply, InteractiveButtonReply, etc. → text
+    return 'text';
   }
 
   // --- Agent Reply ---
@@ -455,15 +648,4 @@ export class ChatIngestionService {
     return updated as unknown as ChatMessageResponseDto;
   }
 
-  // --- Helpers ---
-
-  private normalize_message_type(
-    type: string | undefined,
-  ): 'text' | 'image' | 'document' | 'audio' | 'video' {
-    const valid = ['text', 'image', 'document', 'audio', 'video'] as const;
-    const lower = (type || 'text').toLowerCase();
-    return valid.includes(lower as (typeof valid)[number])
-      ? (lower as (typeof valid)[number])
-      : 'text';
-  }
 }
