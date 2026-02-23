@@ -11,6 +11,7 @@ import { ChatTemplatesModule } from './chatTemplates/chatTemplates.module.js';
 import { QueryAssignmentsModule } from './queryAssignments/queryAssignments.module.js';
 import { IvrWebhooksModule } from './ivrWebhooks/ivrWebhooks.module.js';
 import { KaleyraVoiceModule } from './kaleyraVoice/kaleyraVoice.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { KaleyraVoiceModule } from './kaleyraVoice/kaleyraVoice.module.js';
     QueryAssignmentsModule,
     IvrWebhooksModule,
     KaleyraVoiceModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
