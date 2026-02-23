@@ -24,6 +24,7 @@ async function bootstrap() {
     .addTag('support-emails', 'Manage monitored email addresses')
     .addTag('emails', 'View ingested emails')
     .addTag('webhooks', 'Pub/Sub push endpoints')
+    .addTag('admin-dashboard', 'Admin analytics dashboard')
     .build();
 
   const document = SwaggerModule.createDocument(app, swagger_config);

@@ -5,6 +5,7 @@ import { AppService } from './app.service.js';
 import { SupabaseModule } from './supabase/supabase.module.js';
 import { GmailIngestionModule } from './gmailIngestion/gmailIngestion.module.js';
 import { EmailGatewayModule } from './emailGateway/emailGateway.module.js';
+import { AdminDashboardModule } from './adminDashboard/adminDashboard.module.js';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { EmailGatewayModule } from './emailGateway/emailGateway.module.js';
     SupabaseModule,
     GmailIngestionModule,
     EmailGatewayModule,
+    AdminDashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
