@@ -56,6 +56,25 @@ export class EmailResponseDto {
   @ApiProperty({ example: false })
   is_read: boolean;
 
+  @ApiPropertyOptional({
+    example: 'Customer asking about order delivery status for order #12345',
+  })
+  summary: string | null;
+
+  @ApiPropertyOptional({
+    example: 'dispatch',
+    enum: [
+      'finance',
+      'support',
+      'dispatch',
+      'sales',
+      'technical',
+      'returns_refunds',
+      'general',
+    ],
+  })
+  suggested_team: string | null;
+
   @ApiProperty({ example: '2026-02-22T10:00:00.000Z' })
   created_at: string;
 }

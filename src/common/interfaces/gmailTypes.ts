@@ -56,5 +56,7 @@ export interface EmailRecord {
   internal_date: string | null;
   received_at: string;
   is_read: boolean;
+  summary: string | null;
+  suggested_team: string | null;
   created_at: string;
 }

@@ -8,6 +8,7 @@ import { GmailWebhookController } from './gmailWebhook.controller.js';
 import { GmailIngestionService } from './gmailIngestion.service.js';
 import { GmailService } from './gmail.service.js';
 import { GmailCronService } from './gmailCron.service.js';
+import { EmailAiService } from './emailAi.service.js';
 
 @Module({
   imports: [ScheduleModule.forRoot()],
@@ -16,7 +17,7 @@ import { GmailCronService } from './gmailCron.service.js';
     EmailsController,
     GmailWebhookController,
   ],
-  providers: [GmailIngestionService, GmailService, GmailCronService],
+  providers: [GmailIngestionService, GmailService, GmailCronService, EmailAiService],
   exports: [GmailIngestionService],
 })
 export class GmailIngestionModule {}

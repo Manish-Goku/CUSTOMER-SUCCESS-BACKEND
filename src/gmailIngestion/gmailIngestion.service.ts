@@ -7,6 +7,7 @@ import {
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { GmailService } from './gmail.service.js';
 import { EmailGateway } from '../emailGateway/emailGateway.gateway.js';
+import { EmailAiService } from './emailAi.service.js';
 import { AddSupportEmailDto } from './dto/addSupportEmail.dto.js';
 import { UpdateSupportEmailDto } from './dto/updateSupportEmail.dto.js';
 import { SupportEmailResponseDto } from './dto/supportEmailResponse.dto.js';
@@ -26,6 +27,7 @@ export class GmailIngestionService {
     private readonly supabase_service: SupabaseService,
     private readonly gmail_service: GmailService,
     private readonly email_gateway: EmailGateway,
+    private readonly email_ai_service: EmailAiService,
   ) {}
 
   // --- Support Email CRUD ---
@@ -378,6 +380,14 @@ export class GmailIngestionService {
           message_id,
         );
 
+        // AI summarization and team classification
+        const ai_result =
+          await this.email_ai_service.summarize_and_classify(
+            parsed.subject,
+            parsed.body_text,
+            parsed.from_address,
+          );
+
         const { data: inserted, error: insert_error } = await client
           .from('emails')
           .insert({
@@ -398,6 +408,8 @@ export class GmailIngestionService {
             has_attachments: parsed.has_attachments,
             attachments: parsed.attachments,
             internal_date: parsed.internal_date?.toISOString() || null,
+            summary: ai_result.summary,
+            suggested_team: ai_result.suggested_team,
           })
           .select()
           .single();
