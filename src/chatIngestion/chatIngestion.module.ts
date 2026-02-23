@@ -6,6 +6,7 @@ import {
 import { ChatWebhookController } from './chatWebhook.controller.js';
 import { ChatIngestionService } from './chatIngestion.service.js';
 import { InteraktService } from './interakt.service.js';
+import { NetcoreService } from './netcore.service.js';
 import { ChatAiService } from './chatAi.service.js';
 import { ChatGateway } from './chatGateway.gateway.js';
 
@@ -18,6 +19,7 @@ import { ChatGateway } from './chatGateway.gateway.js';
   providers: [
     ChatIngestionService,
     InteraktService,
+    NetcoreService,
     ChatAiService,
     ChatGateway,
   ],

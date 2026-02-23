@@ -19,14 +19,15 @@ async function bootstrap() {
 
   const swagger_config = new DocumentBuilder()
     .setTitle('Customer Success Backend')
-    .setDescription('Gmail ingestion and customer success API')
+    .setDescription('Email ingestion (IMAP) and customer success API')
     .setVersion('1.0')
     .addTag('support-emails', 'Manage monitored email addresses')
     .addTag('emails', 'View ingested emails')
-    .addTag('webhooks', 'Pub/Sub push endpoints')
     .addTag('admin-dashboard', 'Admin analytics dashboard')
     .addTag('conversations', 'WhatsApp/Interakt conversations')
     .addTag('chat-messages', 'Chat message operations')
+    .addTag('chat-templates', 'Chat template / canned response management')
+    .addTag('query-assignments', 'Query assignment and agent dispatch')
     .build();
 
   const document = SwaggerModule.createDocument(app, swagger_config);

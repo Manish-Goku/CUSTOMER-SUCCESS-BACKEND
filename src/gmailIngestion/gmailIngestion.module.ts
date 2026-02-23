@@ -4,20 +4,15 @@ import {
   GmailIngestionController,
   EmailsController,
 } from './gmailIngestion.controller.js';
-import { GmailWebhookController } from './gmailWebhook.controller.js';
 import { GmailIngestionService } from './gmailIngestion.service.js';
-import { GmailService } from './gmail.service.js';
-import { GmailCronService } from './gmailCron.service.js';
+import { ImapService } from './imap.service.js';
+import { EmailPollService } from './emailPoll.service.js';
 import { EmailAiService } from './emailAi.service.js';
 
 @Module({
   imports: [ScheduleModule.forRoot()],
-  controllers: [
-    GmailIngestionController,
-    EmailsController,
-    GmailWebhookController,
-  ],
-  providers: [GmailIngestionService, GmailService, GmailCronService, EmailAiService],
+  controllers: [GmailIngestionController, EmailsController],
+  providers: [GmailIngestionService, ImapService, EmailPollService, EmailAiService],
   exports: [GmailIngestionService],
 })
 export class GmailIngestionModule {}

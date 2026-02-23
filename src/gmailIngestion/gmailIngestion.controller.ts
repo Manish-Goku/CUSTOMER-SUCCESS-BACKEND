@@ -32,9 +32,9 @@ export class GmailIngestionController {
   ) {}
 
   @Post()
-  @ApiOperation({ summary: 'Add a new email address to monitor' })
+  @ApiOperation({ summary: 'Add a new email address to monitor via IMAP' })
   @ApiCreatedResponse({
-    description: 'Email added and watch started',
+    description: 'Email added with IMAP credentials',
     type: SupportEmailResponseDto,
   })
   async add_support_email(
@@ -64,7 +64,7 @@ export class GmailIngestionController {
 
   @Patch(':id')
   @ApiOperation({
-    summary: 'Update a monitored email (toggle active, change name)',
+    summary: 'Update a monitored email (toggle active, change IMAP credentials)',
   })
   @ApiParam({ name: 'id', description: 'Support email UUID' })
   async update_support_email(
@@ -75,7 +75,7 @@ export class GmailIngestionController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remove an email and stop its Gmail watch' })
+  @ApiOperation({ summary: 'Remove an email and stop monitoring' })
   @ApiParam({ name: 'id', description: 'Support email UUID' })
   async remove_support_email(
     @Param('id', ParseUUIDPipe) id: string,
@@ -83,22 +83,13 @@ export class GmailIngestionController {
     return this.gmail_ingestion_service.remove_support_email(id);
   }
 
-  @Post(':id/watch')
-  @ApiOperation({ summary: 'Manually start Gmail watch on this email' })
+  @Post(':id/sync')
+  @ApiOperation({ summary: 'Manually trigger IMAP sync for this mailbox' })
   @ApiParam({ name: 'id', description: 'Support email UUID' })
-  async start_watch(
+  async sync_mailbox(
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<{ success: boolean; expiration: string }> {
-    return this.gmail_ingestion_service.start_watch(id);
-  }
-
-  @Post(':id/stop-watch')
-  @ApiOperation({ summary: 'Manually stop Gmail watch on this email' })
-  @ApiParam({ name: 'id', description: 'Support email UUID' })
-  async stop_watch(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<{ success: boolean }> {
-    return this.gmail_ingestion_service.stop_watch(id);
+  ): Promise<{ success: boolean; message: string }> {
+    return this.gmail_ingestion_service.sync_mailbox(id);
   }
 }
 

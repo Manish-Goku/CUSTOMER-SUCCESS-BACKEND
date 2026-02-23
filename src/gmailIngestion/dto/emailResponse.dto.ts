@@ -8,10 +8,10 @@ export class EmailResponseDto {
   @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
   support_email_id: string;
 
-  @ApiProperty({ example: '18e1a2b3c4d5e6f7' })
-  gmail_message_id: string;
+  @ApiProperty({ example: '<CABx1234@mail.gmail.com>' })
+  message_id: string;
 
-  @ApiPropertyOptional({ example: '18e1a2b3c4d5e6f7' })
+  @ApiPropertyOptional({ example: '<CABx0000@mail.gmail.com>' })
   thread_id: string | null;
 
   @ApiProperty({ example: 'customer@gmail.com' })
@@ -37,9 +37,6 @@ export class EmailResponseDto {
 
   @ApiPropertyOptional({ example: 'Hi, I have a question about...' })
   snippet: string | null;
-
-  @ApiProperty({ example: ['INBOX', 'UNREAD'], type: [String] })
-  label_ids: string[];
 
   @ApiProperty({ example: false })
   has_attachments: boolean;

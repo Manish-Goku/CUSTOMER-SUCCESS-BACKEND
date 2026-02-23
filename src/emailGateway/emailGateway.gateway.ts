@@ -31,7 +31,7 @@ export class EmailGateway
 
   emit_new_email(email: EmailResponseDto): void {
     this.server.emit('new_email', email);
-    this.logger.log(`Broadcast new_email: ${email.gmail_message_id}`);
+    this.logger.log(`Broadcast new_email: ${email.message_id}`);
   }
 
   emit_new_email_to_inbox(
@@ -40,7 +40,7 @@ export class EmailGateway
   ): void {
     this.server.to(`inbox_${support_email_id}`).emit('new_email', email);
     this.logger.log(
-      `Emitted new_email to inbox_${support_email_id}: ${email.gmail_message_id}`,
+      `Emitted new_email to inbox_${support_email_id}: ${email.message_id}`,
     );
   }
 

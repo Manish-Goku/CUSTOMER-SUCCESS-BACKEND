@@ -13,8 +13,8 @@ export class SupportEmailResponseDto {
   @ApiProperty({ example: true })
   is_active: boolean;
 
-  @ApiPropertyOptional({ example: '2026-03-01T00:00:00.000Z' })
-  watch_expiration: string | null;
+  @ApiPropertyOptional({ example: '2026-02-22T10:30:00.000Z' })
+  last_synced_at: string | null;
 
   @ApiProperty({ example: '2026-02-22T10:00:00.000Z' })
   created_at: string;

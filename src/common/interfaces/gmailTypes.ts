@@ -6,9 +6,8 @@ export interface AttachmentMeta {
 }
 
 export interface ParsedEmail {
-  gmail_message_id: string;
+  message_id: string;
   thread_id: string | null;
-  history_id: string | null;
   from_address: string;
   from_name: string | null;
   to_addresses: string[];
@@ -18,7 +17,6 @@ export interface ParsedEmail {
   body_text: string | null;
   body_html: string | null;
   snippet: string | null;
-  label_ids: string[];
   has_attachments: boolean;
   attachments: AttachmentMeta[];
   internal_date: Date | null;
@@ -29,8 +27,12 @@ export interface SupportEmailRecord {
   email_address: string;
   display_name: string | null;
   is_active: boolean;
-  watch_expiration: string | null;
-  watch_history_id: string | null;
+  imap_host: string;
+  imap_port: number;
+  imap_user: string | null;
+  imap_password: string | null;
+  last_synced_uid: number;
+  last_synced_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,9 +40,8 @@ export interface SupportEmailRecord {
 export interface EmailRecord {
   id: string;
   support_email_id: string;
-  gmail_message_id: string;
+  message_id: string;
   thread_id: string | null;
-  history_id: string | null;
   from_address: string;
   from_name: string | null;
   to_addresses: string[];
@@ -50,7 +51,6 @@ export interface EmailRecord {
   body_text: string | null;
   body_html: string | null;
   snippet: string | null;
-  label_ids: string[];
   has_attachments: boolean;
   attachments: AttachmentMeta[];
   internal_date: string | null;

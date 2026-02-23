@@ -14,4 +14,12 @@ export class UpdateSupportEmailDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @ApiPropertyOptional({
+    example: 'abcd efgh ijkl mnop',
+    description: 'New Gmail App Password',
+  })
+  @IsOptional()
+  @IsString()
+  imap_password?: string;
 }

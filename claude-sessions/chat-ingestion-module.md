@@ -120,3 +120,10 @@ WhatsApp/Interakt chat channel — bidirectional, threaded by phone number. Rece
 - Interakt API body format for sending: `countryCode` (+91), `phoneNumber` (without country code), `type: "Text"`, `data.message`
 - AI classification shares same 7 teams as email: finance, support, dispatch, sales, technical, returns_refunds, general
 - Migration must be run manually in Supabase SQL Editor (no CLI/psql connection configured)
+
+## Netcore Integration (added 2026-02-23)
+See `netcore-integration-module.md` for full details. Added:
+- `POST /webhooks/netcore` endpoint
+- `NetcoreService` for outbound messages (Bearer auth)
+- `channel` column on `conversations`, `external_message_id` on `chat_messages`
+- `send_reply()` routes through correct provider based on conversation channel

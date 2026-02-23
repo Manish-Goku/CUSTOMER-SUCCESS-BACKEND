@@ -5,9 +5,11 @@ import {
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { InteraktService } from './interakt.service.js';
+import { NetcoreService } from './netcore.service.js';
 import { ChatAiService } from './chatAi.service.js';
 import { ChatGateway } from './chatGateway.gateway.js';
 import { InteraktWebhookDto } from './dto/interaktWebhook.dto.js';
+import { NetcoreWebhookDto } from './dto/netcoreWebhook.dto.js';
 import { SendMessageDto } from './dto/sendMessage.dto.js';
 import { GetConversationsDto } from './dto/getConversations.dto.js';
 import { UpdateConversationDto } from './dto/updateConversation.dto.js';
@@ -25,6 +27,7 @@ export class ChatIngestionService {
   constructor(
     private readonly supabase_service: SupabaseService,
     private readonly interakt_service: InteraktService,
+    private readonly netcore_service: NetcoreService,
     private readonly chat_ai_service: ChatAiService,
     private readonly chat_gateway: ChatGateway,
   ) {}
@@ -180,39 +183,101 @@ export class ChatIngestionService {
     );
   }
 
+  // --- Netcore Webhook Processing ---
+
+  async process_netcore_webhook(payload: NetcoreWebhookDto): Promise<void> {
+    const messages = payload.incoming_message;
+    if (!messages || messages.length === 0) {
+      this.logger.log('Netcore webhook has no incoming_message, skipping');
+      return;
+    }
+
+    for (const msg of messages) {
+      const phone_number = (msg.from || '').replace('+', '');
+      if (!phone_number) {
+        this.logger.warn('Netcore message missing from field');
+        continue;
+      }
+
+      const customer_name = msg.from_name || null;
+      const external_message_id = msg.message_id || null;
+      const message_type = this.map_content_type(msg.message_type || 'text');
+
+      let content: string | null = null;
+      let media_url: string | null = null;
+
+      switch (msg.message_type) {
+        case 'text':
+          content = msg.text_type?.text || null;
+          break;
+        case 'image':
+          media_url = msg.image_type?.url || null;
+          content = msg.image_type?.caption || null;
+          break;
+        case 'document':
+          media_url = msg.document_type?.url || null;
+          content = msg.document_type?.caption || msg.document_type?.filename || null;
+          break;
+        default:
+          content = msg.text_type?.text || null;
+          break;
+      }
+
+      await this.ingest_inbound_message({
+        phone_number,
+        customer_name,
+        external_message_id,
+        message_type,
+        content,
+        media_url,
+        channel: 'netcore',
+      });
+    }
+
+    this.logger.log(
+      `Processed Netcore webhook: ${messages.length} messages`,
+    );
+  }
+
   // --- Shared inbound message ingestion ---
 
   private async ingest_inbound_message(params: {
     phone_number: string;
     customer_name: string | null;
-    interakt_message_id: string | null;
+    interakt_message_id?: string | null;
+    external_message_id?: string | null;
     message_type: 'text' | 'image' | 'document' | 'audio' | 'video';
     content: string | null;
     media_url: string | null;
     ai_override_text?: string | null;
+    channel?: string;
   }): Promise<void> {
     const {
       phone_number,
       customer_name,
-      interakt_message_id,
       message_type,
       content,
       media_url,
       ai_override_text,
+      channel = 'interakt',
     } = params;
+
+    // Use external_message_id if provided, fall back to interakt_message_id
+    const dedup_id = params.external_message_id || params.interakt_message_id || null;
 
     const client = this.supabase_service.getClient();
 
-    // Dedup by interakt_message_id
-    if (interakt_message_id) {
+    // Dedup by external_message_id (or interakt_message_id for legacy)
+    if (dedup_id) {
       const { data: existing } = await client
         .from('chat_messages')
         .select('id')
-        .eq('interakt_message_id', interakt_message_id)
-        .single();
+        .or(`external_message_id.eq.${dedup_id},interakt_message_id.eq.${dedup_id}`)
+        .limit(1)
+        .maybeSingle();
 
       if (existing) {
-        this.logger.log(`Duplicate message ignored: ${interakt_message_id}`);
+        this.logger.log(`Duplicate message ignored: ${dedup_id}`);
         return;
       }
     }
@@ -233,6 +298,7 @@ export class ChatIngestionService {
           phone_number,
           customer_name,
           status: 'open',
+          channel,
         })
         .select()
         .single();
@@ -287,7 +353,8 @@ export class ChatIngestionService {
       .from('chat_messages')
       .insert({
         conversation_id: conversation.id,
-        interakt_message_id,
+        interakt_message_id: params.interakt_message_id || null,
+        external_message_id: dedup_id,
         direction: 'inbound',
         message_type,
         content,
@@ -410,16 +477,26 @@ export class ChatIngestionService {
     }
 
     const conv = conversation as ConversationRecord;
+    const channel = (conversation.channel as string) || 'interakt';
 
-    // Send via Interakt API
-    const send_result = await this.interakt_service.send_message(
-      conv.phone_number,
-      dto.content,
-    );
+    // Send via the appropriate provider
+    let send_result: { success: boolean; error?: string };
+
+    if (channel === 'netcore') {
+      send_result = await this.netcore_service.send_message(
+        conv.phone_number,
+        dto.content,
+      );
+    } else {
+      send_result = await this.interakt_service.send_message(
+        conv.phone_number,
+        dto.content,
+      );
+    }
 
     if (!send_result.success) {
       this.logger.error(
-        `Failed to send reply to ${conv.phone_number}: ${send_result.error}`,
+        `Failed to send reply to ${conv.phone_number} via ${channel}: ${send_result.error}`,
       );
       throw new Error(`Failed to send message: ${send_result.error}`);
     }

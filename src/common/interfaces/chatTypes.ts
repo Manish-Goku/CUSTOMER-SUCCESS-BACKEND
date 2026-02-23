@@ -2,6 +2,7 @@ export interface ConversationRecord {
   id: string;
   phone_number: string;
   customer_name: string | null;
+  channel: 'interakt' | 'netcore';
   status: 'open' | 'resolved' | 'archived';
   assigned_team: string | null;
   assigned_agent: string | null;
@@ -15,6 +16,7 @@ export interface ChatMessageRecord {
   id: string;
   conversation_id: string;
   interakt_message_id: string | null;
+  external_message_id: string | null;
   direction: 'inbound' | 'outbound';
   message_type: 'text' | 'image' | 'document' | 'audio' | 'video';
   content: string | null;
