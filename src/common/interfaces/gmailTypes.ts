@@ -58,5 +58,8 @@ export interface EmailRecord {
   is_read: boolean;
   summary: string | null;
   suggested_team: string | null;
+  direction: string;
+  agent_name: string | null;
+  in_reply_to: string | null;
   created_at: string;
 }

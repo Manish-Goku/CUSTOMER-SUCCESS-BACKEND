@@ -15,7 +15,10 @@ import {
   SupportEmailRecord,
   EmailRecord,
 } from '../common/interfaces/gmailTypes.js';
-import { encrypt } from '../common/crypto.js';
+import { encrypt, decrypt } from '../common/crypto.js';
+import { SmtpService } from './smtp.service.js';
+import { EmailGateway } from '../emailGateway/emailGateway.gateway.js';
+import { SendReplyDto } from './dto/sendReply.dto.js';
 
 @Injectable()
 export class GmailIngestionService {
@@ -24,6 +27,8 @@ export class GmailIngestionService {
   constructor(
     private readonly supabase_service: SupabaseService,
     private readonly email_poll_service: EmailPollService,
+    private readonly smtp_service: SmtpService,
+    private readonly email_gateway: EmailGateway,
   ) {}
 
   // --- Support Email CRUD ---
@@ -236,6 +241,109 @@ export class GmailIngestionService {
     }
 
     return data as unknown as EmailResponseDto;
+  }
+
+  // --- Reply ---
+
+  async send_reply(
+    email_id: string,
+    dto: SendReplyDto,
+  ): Promise<EmailResponseDto> {
+    const client = this.supabase_service.getClient();
+
+    // 1. Fetch original email
+    const { data: original, error: fetch_error } = await client
+      .from('emails')
+      .select('*')
+      .eq('id', email_id)
+      .single();
+
+    if (fetch_error || !original) {
+      throw new NotFoundException(`Email ${email_id} not found`);
+    }
+
+    // 2. Fetch support_email credentials
+    const { data: support_email, error: se_error } = await client
+      .from('support_emails')
+      .select('*')
+      .eq('id', original.support_email_id)
+      .single();
+
+    if (se_error || !support_email) {
+      throw new NotFoundException(
+        `Support email for ${email_id} not found`,
+      );
+    }
+
+    const smtp_password = decrypt(support_email.imap_password);
+
+    // 3. Send via SMTP
+    const subject = original.subject?.startsWith('Re:')
+      ? original.subject
+      : `Re: ${original.subject || ''}`;
+
+    const { message_id: sent_message_id } =
+      await this.smtp_service.send_email(
+        support_email.email_address,
+        smtp_password,
+        {
+          from: support_email.display_name
+            ? `"${support_email.display_name}" <${support_email.email_address}>`
+            : support_email.email_address,
+          to: original.from_address,
+          cc: dto.cc,
+          bcc: dto.bcc,
+          subject,
+          text: dto.body_text,
+          html: dto.body_html,
+          in_reply_to: original.message_id,
+          references: original.thread_id || original.message_id,
+        },
+      );
+
+    // 4. Persist outbound row
+    const { data: reply_row, error: insert_error } = await client
+      .from('emails')
+      .insert({
+        support_email_id: original.support_email_id,
+        message_id: sent_message_id,
+        thread_id: original.thread_id || original.message_id,
+        from_address: support_email.email_address,
+        from_name: support_email.display_name || support_email.email_address,
+        to_addresses: [original.from_address],
+        cc_addresses: dto.cc || [],
+        bcc_addresses: dto.bcc || [],
+        subject,
+        body_text: dto.body_text,
+        body_html: dto.body_html || null,
+        snippet: dto.body_text.slice(0, 200),
+        has_attachments: false,
+        attachments: [],
+        internal_date: new Date().toISOString(),
+        received_at: new Date().toISOString(),
+        is_read: true,
+        direction: 'outbound',
+        agent_name: dto.agent_name || null,
+        in_reply_to: original.message_id,
+      })
+      .select()
+      .single();
+
+    if (insert_error || !reply_row) {
+      this.logger.error('Failed to persist outbound reply', insert_error);
+      throw new Error('Reply sent but failed to persist');
+    }
+
+    const response = reply_row as unknown as EmailResponseDto;
+
+    // 5. Broadcast via WebSocket
+    this.email_gateway.emit_new_email(response);
+
+    this.logger.log(
+      `Reply sent for email ${email_id} → ${original.from_address}`,
+    );
+
+    return response;
   }
 
   // --- Mappers ---

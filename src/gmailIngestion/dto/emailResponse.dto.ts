@@ -72,6 +72,15 @@ export class EmailResponseDto {
   })
   suggested_team: string | null;
 
+  @ApiProperty({ example: 'inbound', enum: ['inbound', 'outbound'] })
+  direction: string;
+
+  @ApiPropertyOptional({ example: 'Manish' })
+  agent_name: string | null;
+
+  @ApiPropertyOptional({ example: '<CABx1234@mail.gmail.com>' })
+  in_reply_to: string | null;
+
   @ApiProperty({ example: '2026-02-22T10:00:00.000Z' })
   created_at: string;
 }

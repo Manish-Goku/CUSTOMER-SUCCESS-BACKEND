@@ -20,6 +20,7 @@ import {
 import { GmailIngestionService } from './gmailIngestion.service.js';
 import { AddSupportEmailDto } from './dto/addSupportEmail.dto.js';
 import { UpdateSupportEmailDto } from './dto/updateSupportEmail.dto.js';
+import { SendReplyDto } from './dto/sendReply.dto.js';
 import { SupportEmailResponseDto } from './dto/supportEmailResponse.dto.js';
 import { EmailResponseDto } from './dto/emailResponse.dto.js';
 import { GetEmailsDto } from './dto/getEmails.dto.js';
@@ -119,5 +120,19 @@ export class EmailsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<EmailResponseDto> {
     return this.gmail_ingestion_service.get_email(id);
+  }
+
+  @Post(':id/reply')
+  @ApiOperation({ summary: 'Send a reply to an email via SMTP' })
+  @ApiParam({ name: 'id', description: 'Email UUID to reply to' })
+  @ApiCreatedResponse({
+    description: 'Reply sent and persisted',
+    type: EmailResponseDto,
+  })
+  async send_reply(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SendReplyDto,
+  ): Promise<EmailResponseDto> {
+    return this.gmail_ingestion_service.send_reply(id, dto);
   }
 }
