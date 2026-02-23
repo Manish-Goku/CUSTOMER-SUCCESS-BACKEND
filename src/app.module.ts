@@ -7,6 +7,9 @@ import { GmailIngestionModule } from './gmailIngestion/gmailIngestion.module.js'
 import { EmailGatewayModule } from './emailGateway/emailGateway.module.js';
 import { AdminDashboardModule } from './adminDashboard/adminDashboard.module.js';
 import { ChatIngestionModule } from './chatIngestion/chatIngestion.module.js';
+import { ChatTemplatesModule } from './chatTemplates/chatTemplates.module.js';
+import { QueryAssignmentsModule } from './queryAssignments/queryAssignments.module.js';
+import { IvrWebhooksModule } from './ivrWebhooks/ivrWebhooks.module.js';
 
 @Module({
   imports: [
@@ -16,6 +19,9 @@ import { ChatIngestionModule } from './chatIngestion/chatIngestion.module.js';
     EmailGatewayModule,
     AdminDashboardModule,
     ChatIngestionModule,
+    ChatTemplatesModule,
+    QueryAssignmentsModule,
+    IvrWebhooksModule,
   ],
   controllers: [AppController],
   providers: [AppService],
