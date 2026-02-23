@@ -25,6 +25,8 @@ async function bootstrap() {
     .addTag('emails', 'View ingested emails')
     .addTag('webhooks', 'Pub/Sub push endpoints')
     .addTag('admin-dashboard', 'Admin analytics dashboard')
+    .addTag('conversations', 'WhatsApp/Interakt conversations')
+    .addTag('chat-messages', 'Chat message operations')
     .build();
 
   const document = SwaggerModule.createDocument(app, swagger_config);
