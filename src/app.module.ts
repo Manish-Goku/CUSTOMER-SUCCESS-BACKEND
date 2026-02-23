@@ -10,6 +10,7 @@ import { ChatIngestionModule } from './chatIngestion/chatIngestion.module.js';
 import { ChatTemplatesModule } from './chatTemplates/chatTemplates.module.js';
 import { QueryAssignmentsModule } from './queryAssignments/queryAssignments.module.js';
 import { IvrWebhooksModule } from './ivrWebhooks/ivrWebhooks.module.js';
+import { KaleyraVoiceModule } from './kaleyraVoice/kaleyraVoice.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { IvrWebhooksModule } from './ivrWebhooks/ivrWebhooks.module.js';
     ChatTemplatesModule,
     QueryAssignmentsModule,
     IvrWebhooksModule,
+    KaleyraVoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
