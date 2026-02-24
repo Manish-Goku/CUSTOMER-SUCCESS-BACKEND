@@ -9,7 +9,7 @@ export class ActionYoutubeLeadDto {
   @ApiPropertyOptional() @IsOptional() @IsString() performed_by?: string;
 }
 
-export class BulkAssignDto {
+export class BulkAssignYoutubeLeadDto {
   @ApiProperty({ type: [String] }) @IsArray() @IsUUID('4', { each: true }) lead_ids: string[];
   @ApiProperty() @IsString() @MinLength(1) assigned_to: string;
 }

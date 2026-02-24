@@ -2,7 +2,7 @@ import { Injectable, Logger, InternalServerErrorException, NotFoundException } f
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { CreateYoutubeLeadDto, UpdateYoutubeLeadDto } from './dto/createYoutubeLead.dto.js';
 import { GetYoutubeLeadsDto } from './dto/getYoutubeLeads.dto.js';
-import { ActionYoutubeLeadDto, BulkAssignDto } from './dto/actionYoutubeLead.dto.js';
+import { ActionYoutubeLeadDto, BulkAssignYoutubeLeadDto } from './dto/actionYoutubeLead.dto.js';
 
 export interface YoutubeLeadRow {
   id: string;
@@ -203,7 +203,7 @@ export class YoutubeLeadsService {
     return data as YoutubeLeadRow;
   }
 
-  async bulk_assign(dto: BulkAssignDto): Promise<{ updated: number }> {
+  async bulk_assign(dto: BulkAssignYoutubeLeadDto): Promise<{ updated: number }> {
     const client = this.supabase_service.getClient();
 
     const { data, error } = await client

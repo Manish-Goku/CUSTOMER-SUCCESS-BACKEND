@@ -2,7 +2,6 @@ import {
   Controller,
   Post,
   Param,
-  Headers,
   Body,
   HttpCode,
   Logger,
@@ -23,14 +22,13 @@ export class IvrWebhooksController {
   @ApiOkResponse({ description: 'Webhook acknowledged' })
   async handle_ivr_webhook(
     @Param('slug') slug: string,
-    @Headers('x-api-key') api_key: string,
     @Body() body: Record<string, unknown>,
   ): Promise<{ status: string }> {
     this.logger.log(`Received IVR webhook for provider: ${slug}`);
 
     // Fire-and-forget: return 200 fast to avoid retries
     this.ivr_webhooks_service
-      .process_webhook(slug, api_key, body)
+      .process_webhook(slug, body)
       .catch((err) => {
         this.logger.error(`Error processing IVR webhook [${slug}]`, err);
       });

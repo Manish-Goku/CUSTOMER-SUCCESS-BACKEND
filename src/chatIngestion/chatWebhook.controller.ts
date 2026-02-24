@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, Logger, Param, Headers } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, Logger, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
 import { ChatIngestionService } from './chatIngestion.service.js';
 import { InteraktWebhookDto } from './dto/interaktWebhook.dto.js';
@@ -36,13 +36,12 @@ export class ChatWebhookController {
   @ApiOkResponse({ description: 'Webhook acknowledged' })
   async handle_interact_webhook(
     @Param('slug') slug: string,
-    @Headers('x-api-key') api_key: string,
     @Body() body: InteraktWebhookDto,
   ): Promise<{ status: string }> {
     this.logger.log(`Received Interact webhook for provider: ${slug}`);
 
     this.chat_ingestion_service
-      .process_interact_webhook(slug, api_key, body)
+      .process_interact_webhook(slug, body)
       .catch((err) => {
         this.logger.error(`Error processing Interact webhook [${slug}]`, err);
       });

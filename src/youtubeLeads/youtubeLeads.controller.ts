@@ -12,7 +12,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { YoutubeLeadsService } from './youtubeLeads.service.js';
 import { CreateYoutubeLeadDto, UpdateYoutubeLeadDto } from './dto/createYoutubeLead.dto.js';
 import { GetYoutubeLeadsDto } from './dto/getYoutubeLeads.dto.js';
-import { ActionYoutubeLeadDto, BulkAssignDto } from './dto/actionYoutubeLead.dto.js';
+import { ActionYoutubeLeadDto, BulkAssignYoutubeLeadDto } from './dto/actionYoutubeLead.dto.js';
 
 @ApiTags('youtube-leads')
 @Controller('youtube-leads')
@@ -57,7 +57,7 @@ export class YoutubeLeadsController {
 
   @Post('bulk-assign')
   @ApiOperation({ summary: 'Bulk assign leads to an agent' })
-  async bulk_assign(@Body() dto: BulkAssignDto) {
+  async bulk_assign(@Body() dto: BulkAssignYoutubeLeadDto) {
     return this.youtube_leads_service.bulk_assign(dto);
   }
 }

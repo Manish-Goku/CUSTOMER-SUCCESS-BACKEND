@@ -2,7 +2,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { InteraktService } from './interakt.service.js';
@@ -37,7 +36,6 @@ export class ChatIngestionService {
 
   async process_interact_webhook(
     slug: string,
-    api_key: string,
     payload: InteraktWebhookDto,
   ): Promise<void> {
     const client = this.supabase_service.getClient();
@@ -51,10 +49,6 @@ export class ChatIngestionService {
 
     if (error || !provider) {
       throw new NotFoundException(`Interact provider not found: ${slug}`);
-    }
-
-    if (!api_key || api_key !== provider.api_key) {
-      throw new UnauthorizedException('Invalid API key');
     }
 
     await this.process_webhook(payload, slug);

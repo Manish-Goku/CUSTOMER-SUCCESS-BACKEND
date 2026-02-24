@@ -1,7 +1,6 @@
 import {
   Injectable,
   Logger,
-  UnauthorizedException,
   NotFoundException,
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service.js';
@@ -40,7 +39,6 @@ export class IvrWebhooksService {
 
   async process_webhook(
     slug: string,
-    api_key: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
     const client = this.supabase_service.getClient();
@@ -59,12 +57,7 @@ export class IvrWebhooksService {
 
     const typed_provider = provider as IvrProvider;
 
-    // 2. Validate API key
-    if (!api_key || api_key !== typed_provider.api_key) {
-      throw new UnauthorizedException('Invalid API key');
-    }
-
-    // 3. Apply field mapping
+    // 2. Apply field mapping
     const field_mapping = typed_provider.field_mapping || {};
     const mapped: Record<string, unknown> = {};
 
