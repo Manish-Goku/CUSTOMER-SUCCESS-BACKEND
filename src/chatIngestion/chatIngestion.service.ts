@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { InteraktService } from './interakt.service.js';
@@ -34,12 +35,40 @@ export class ChatIngestionService {
 
   // --- Webhook Processing ---
 
-  async process_webhook(payload: InteraktWebhookDto): Promise<void> {
+  async process_interact_webhook(
+    slug: string,
+    api_key: string,
+    payload: InteraktWebhookDto,
+  ): Promise<void> {
+    const client = this.supabase_service.getClient();
+
+    const { data: provider, error } = await client
+      .from('interact_providers')
+      .select('*')
+      .eq('slug', slug)
+      .eq('is_active', true)
+      .single();
+
+    if (error || !provider) {
+      throw new NotFoundException(`Interact provider not found: ${slug}`);
+    }
+
+    if (!api_key || api_key !== provider.api_key) {
+      throw new UnauthorizedException('Invalid API key');
+    }
+
+    await this.process_webhook(payload, slug);
+  }
+
+  async process_webhook(
+    payload: InteraktWebhookDto,
+    channel: string = 'interakt',
+  ): Promise<void> {
     switch (payload.type) {
       case 'message_received':
-        return this.process_message_received(payload.data);
+        return this.process_message_received(payload.data, channel);
       case 'workflow_response_update':
-        return this.process_workflow_response(payload.data);
+        return this.process_workflow_response(payload.data, channel);
       default:
         this.logger.log(`Ignoring webhook event type: ${payload.type}`);
     }
@@ -49,6 +78,7 @@ export class ChatIngestionService {
 
   private async process_message_received(
     data: Record<string, unknown> | undefined,
+    channel: string = 'interakt',
   ): Promise<void> {
     const customer = data?.customer as Record<string, unknown> | undefined;
     const message = data?.message as Record<string, unknown> | undefined;
@@ -89,6 +119,7 @@ export class ChatIngestionService {
       message_type,
       content,
       media_url,
+      channel,
     });
   }
 
@@ -96,6 +127,7 @@ export class ChatIngestionService {
 
   private async process_workflow_response(
     data: Record<string, unknown> | undefined,
+    channel: string = 'interakt',
   ): Promise<void> {
     if (!data) {
       this.logger.warn('workflow_response_update missing data');
@@ -175,6 +207,7 @@ export class ChatIngestionService {
         media_url: msg.media_url,
         // AI classify only on the first message of this batch
         ai_override_text: i === 0 ? combined_text : null,
+        channel,
       });
     }
 
@@ -282,12 +315,13 @@ export class ChatIngestionService {
       }
     }
 
-    // Find or create conversation
+    // Find or create conversation (scoped by channel)
     let { data: conversation } = await client
       .from('conversations')
       .select('*')
       .eq('phone_number', phone_number)
-      .single();
+      .eq('channel', channel)
+      .maybeSingle();
 
     let is_new_or_reopened = false;
 
