@@ -2,18 +2,18 @@ import { IsString, IsOptional, IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class OutboundCallDto {
-  @ApiProperty({ example: '9876543210', description: 'Customer phone number' })
+  @ApiProperty({ example: '9876543210', description: 'Customer phone number (10-digit)' })
   @IsString()
   @IsNotEmpty()
   customer_number: string;
 
-  @ApiPropertyOptional({ description: 'IVR flow / sound file / message target' })
-  @IsOptional()
+  @ApiProperty({ example: '123.sound', description: 'Sound file ID or IVR reference (e.g. ivr:1234)' })
   @IsString()
-  target?: string;
+  @IsNotEmpty()
+  play: string;
 
-  @ApiPropertyOptional({ description: 'Override bridge DID (defaults to env)' })
+  @ApiPropertyOptional({ description: 'Campaign name for grouping' })
   @IsOptional()
   @IsString()
-  bridge?: string;
+  campaign?: string;
 }

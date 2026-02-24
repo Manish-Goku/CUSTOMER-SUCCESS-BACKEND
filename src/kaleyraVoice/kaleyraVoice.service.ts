@@ -3,37 +3,23 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { SupabaseService } from '../supabase/supabase.service.js';
 
-interface KaleyraClickToCallResponse {
-  data: {
-    id: string;
-    status: string;
-  };
-}
-
-interface KaleyraOutboundResponse {
-  data: {
-    id: string;
-    status: string;
-  };
-}
+// Legacy Kaleyra Voice API (api-voice.kaleyra.com)
+// All endpoints use POST /v1/ with a `method` form param
+// Docs: https://apidocs-voice.kaleyra.com/
 
 @Injectable()
 export class KaleyraVoiceService {
   private readonly logger = new Logger(KaleyraVoiceService.name);
-  private readonly base_url: string;
+  private readonly base_url = 'https://api-voice.kaleyra.com/v1/';
   private readonly api_key: string;
-  private readonly bridge_number: string;
   private readonly callback_url: string;
 
   constructor(
     private readonly config_service: ConfigService,
     private readonly supabase_service: SupabaseService,
   ) {
-    const sid = this.config_service.getOrThrow<string>('KALEYRA_SID');
     this.api_key = this.config_service.getOrThrow<string>('KALEYRA_API_KEY');
-    this.bridge_number = this.config_service.getOrThrow<string>('KALEYRA_BRIDGE_NUMBER');
     this.callback_url = this.config_service.getOrThrow<string>('KALEYRA_CALLBACK_URL');
-    this.base_url = `https://api.kaleyra.io/v1/${sid}/voice`;
   }
 
   async click_to_call(
@@ -41,25 +27,30 @@ export class KaleyraVoiceService {
     customer_number: string,
     agent_name?: string,
   ): Promise<{ call_id: string; status: string; message: string }> {
+    // Build callback URL template with Kaleyra placeholders
+    const callback_template = this.build_callback_url();
+
     const params = new URLSearchParams({
-      from: agent_number,
-      to: customer_number,
-      bridge: this.bridge_number,
-      callback: this.callback_url,
+      method: 'dial.click2call',
+      api_key: this.api_key,
+      caller: agent_number,
+      receiver: customer_number,
+      callback: callback_template,
+      return: '1',
+      format: 'json',
     });
 
-    const response = await axios.post<KaleyraClickToCallResponse>(
-      `${this.base_url}/click-to-call`,
+    const response = await axios.post(
+      this.base_url,
       params.toString(),
       {
         headers: {
-          'api-key': this.api_key,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
       },
     );
 
-    const call_id = response.data?.data?.id;
+    const call_id = response.data?.id || response.data?.call_id || '';
     if (!call_id) {
       this.logger.error('Kaleyra click-to-call: no call ID in response', response.data);
       throw new Error('Kaleyra API did not return a call ID');
@@ -92,31 +83,36 @@ export class KaleyraVoiceService {
 
   async outbound_call(
     customer_number: string,
-    target?: string,
-    bridge?: string,
+    play: string,
+    campaign?: string,
   ): Promise<{ call_id: string; status: string; message: string }> {
+    const callback_template = this.build_callback_url();
+
     const params = new URLSearchParams({
-      to: customer_number,
-      bridge: bridge || this.bridge_number,
-      callback: this.callback_url,
+      method: 'voice.call',
+      api_key: this.api_key,
+      numbers: customer_number,
+      play,
+      callback: callback_template,
+      return: '1',
+      format: 'json',
     });
 
-    if (target) {
-      params.append('target', target);
+    if (campaign) {
+      params.append('campaign', campaign);
     }
 
-    const response = await axios.post<KaleyraOutboundResponse>(
-      `${this.base_url}/outbound`,
+    const response = await axios.post(
+      this.base_url,
       params.toString(),
       {
         headers: {
-          'api-key': this.api_key,
           'Content-Type': 'application/x-www-form-urlencoded',
         },
       },
     );
 
-    const call_id = response.data?.data?.id;
+    const call_id = response.data?.id || response.data?.call_id || '';
     if (!call_id) {
       this.logger.error('Kaleyra outbound: no call ID in response', response.data);
       throw new Error('Kaleyra API did not return a call ID');
@@ -145,89 +141,160 @@ export class KaleyraVoiceService {
     };
   }
 
-  async process_callback(payload: Record<string, unknown>): Promise<void> {
-    const call_id = String(payload.id || payload.call_id || '');
-    const event_type = String(payload.status || payload.event || '');
+  /**
+   * Process callback from Kaleyra.
+   * Kaleyra sends GET requests to the callback URL template with replaced variables:
+   * {caller}, {receiver}, {status}, {status1}, {status2}, {duration}, {billsec},
+   * {starttime}, {endtime}, {recordpath}, {callerid}
+   */
+  async process_callback(query: Record<string, string>): Promise<void> {
+    const caller = query.caller || '';
+    const receiver = query.receiver || '';
+    const status = query.status || '';
+    const status1 = query.status1 || '';
+    const status2 = query.status2 || '';
+    const duration = query.duration || '';
+    const billsec = query.billsec || '';
+    const starttime = query.starttime || '';
+    const endtime = query.endtime || '';
+    const recordpath = query.recordpath || '';
+    const call_id = query.id || '';
+
+    if (!caller && !receiver) {
+      this.logger.warn('Kaleyra callback: missing caller/receiver', query);
+      return;
+    }
+
+    // Find the ivr_calls row by caller+receiver (since click-to-call may not return ID in callback)
+    const client = this.supabase_service.getClient();
+
+    // Try finding by call_id first, fallback to receiver (customer number)
+    let match_column = 'call_id';
+    let match_value = call_id;
 
     if (!call_id) {
-      this.logger.warn('Kaleyra callback: missing call ID', payload);
-      return;
+      match_column = 'mobile_number';
+      match_value = receiver || caller;
     }
 
     const update: Record<string, unknown> = {};
 
-    switch (event_type) {
-      case 'from_call_start':
-        // Agent phone is ringing
-        update.status = 'ringing';
-        break;
+    // Map Kaleyra statuses to our internal statuses
+    // status1 = caller (agent) leg, status2 = receiver (customer) leg
+    const effective_status = status || status2 || status1;
 
-      case 'from_call_answer':
-        // Agent answered — now dialing customer
-        update.status = 'ringing';
-        break;
-
-      case 'to_call_start':
-        // Customer phone is ringing
-        update.status = 'ringing';
-        break;
-
-      case 'to_call_answer':
-        // Customer answered — call is active
-        update.status = 'active';
-        update.answered_at = new Date().toISOString();
-        break;
-
-      case 'call_end':
-        update.status = 'completed';
-        update.ended_at = new Date().toISOString();
-        if (payload.duration) {
-          update.duration_seconds = Number(payload.duration);
+    switch (effective_status.toUpperCase()) {
+      case 'ANSWER':
+        update.status = 'answered';
+        if (starttime) {
+          update.answered_at = this.epoch_to_iso(starttime);
         }
         break;
 
+      case 'BUSY':
+        update.status = 'busy';
+        break;
+
+      case 'NOANSWER':
+        update.status = 'missed';
+        break;
+
+      case 'CANCEL':
+        update.status = 'cancelled';
+        break;
+
+      case 'FAILED':
+      case 'CONGESTION':
+        update.status = 'failed';
+        break;
+
       default:
-        this.logger.warn(`Kaleyra callback: unknown event "${event_type}" for call ${call_id}`);
-        update.status = event_type;
+        if (effective_status) {
+          this.logger.warn(`Kaleyra callback: unknown status "${effective_status}"`);
+          update.status = effective_status.toLowerCase();
+        }
         break;
     }
 
-    const client = this.supabase_service.getClient();
-    const { error: update_error } = await client
-      .from('ivr_calls')
-      .update(update)
-      .eq('call_id', call_id);
+    // Duration and timing
+    if (duration) {
+      update.duration_seconds = Number(duration);
+    } else if (billsec) {
+      update.duration_seconds = Number(billsec);
+    }
 
-    if (update_error) {
-      this.logger.error(`Failed to update call ${call_id}: ${update_error.message}`);
+    if (endtime) {
+      update.ended_at = this.epoch_to_iso(endtime);
+    }
+
+    if (recordpath) {
+      update.recording_url = recordpath;
+    }
+
+    if (Object.keys(update).length === 0) {
+      this.logger.warn('Kaleyra callback: nothing to update', query);
       return;
     }
 
-    this.logger.log(`Kaleyra callback: call ${call_id} → ${update.status}`);
+    const { error: update_error } = await client
+      .from('ivr_calls')
+      .update(update)
+      .eq(match_column, match_value)
+      .eq('direction', 'outbound');
+
+    if (update_error) {
+      this.logger.error(`Failed to update call (${match_column}=${match_value}): ${update_error.message}`);
+      return;
+    }
+
+    this.logger.log(`Kaleyra callback: ${match_column}=${match_value} → ${update.status}`);
   }
 
   async get_call_logs(filters?: {
-    start_time?: string;
-    end_time?: string;
-    status?: string;
+    from_date?: string;
+    to_date?: string;
+    call_to?: string;
     page?: number;
     limit?: number;
   }): Promise<unknown> {
-    const params: Record<string, string> = {
-      bridge: this.bridge_number,
-    };
-
-    if (filters?.start_time) params.start_time = filters.start_time;
-    if (filters?.end_time) params.end_time = filters.end_time;
-    if (filters?.status) params.status = filters.status;
-    if (filters?.page) params.page = String(filters.page);
-    if (filters?.limit) params.offset = String(filters.limit);
-
-    const response = await axios.get(`${this.base_url}/call-logs`, {
-      headers: { 'api-key': this.api_key },
-      params,
+    const params = new URLSearchParams({
+      method: 'dial.c2cstatus',
+      api_key: this.api_key,
+      format: 'json',
     });
 
+    if (filters?.from_date) params.append('fromdate', filters.from_date);
+    if (filters?.to_date) params.append('todate', filters.to_date);
+    if (filters?.call_to) params.append('call to', filters.call_to);
+    if (filters?.page) params.append('page', String(filters.page));
+    if (filters?.limit) params.append('limit', String(filters.limit));
+
+    const response = await axios.post(
+      this.base_url,
+      params.toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      },
+    );
+
     return response.data;
+  }
+
+  /**
+   * Build Kaleyra callback URL template with placeholder variables.
+   * Kaleyra replaces {caller}, {receiver}, etc. before hitting our endpoint.
+   */
+  private build_callback_url(): string {
+    const base = this.callback_url;
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}caller={caller}&receiver={receiver}&status={status}&status1={status1}&status2={status2}&duration={duration}&billsec={billsec}&starttime={starttime}&endtime={endtime}&recordpath={recordpath}&callerid={callerid}&id={id}`;
+  }
+
+  private epoch_to_iso(epoch: string): string {
+    const num = Number(epoch);
+    if (isNaN(num)) return new Date().toISOString();
+    return new Date(num * 1000).toISOString();
   }
 }

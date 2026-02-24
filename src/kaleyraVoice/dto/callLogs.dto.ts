@@ -3,20 +3,20 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CallLogsQueryDto {
-  @ApiPropertyOptional({ description: 'Start time (ISO 8601)' })
+  @ApiPropertyOptional({ description: 'From date (YYYY/MM/DD or DD/MM/YYYY)' })
   @IsOptional()
   @IsString()
-  start_time?: string;
+  from_date?: string;
 
-  @ApiPropertyOptional({ description: 'End time (ISO 8601)' })
+  @ApiPropertyOptional({ description: 'To date (YYYY/MM/DD or DD/MM/YYYY)' })
   @IsOptional()
   @IsString()
-  end_time?: string;
+  to_date?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by call status' })
+  @ApiPropertyOptional({ description: 'Filter by phone number (10-digit)' })
   @IsOptional()
   @IsString()
-  status?: string;
+  call_to?: string;
 
   @ApiPropertyOptional({ description: 'Page number', default: 1 })
   @IsOptional()
@@ -25,10 +25,10 @@ export class CallLogsQueryDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ description: 'Results per page', default: 20 })
+  @ApiPropertyOptional({ description: 'Results per page', default: 50 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  limit?: number = 20;
+  limit?: number = 50;
 }

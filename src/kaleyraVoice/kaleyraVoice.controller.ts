@@ -41,23 +41,23 @@ export class KaleyraVoiceController {
   ): Promise<{ call_id: string; status: string; message: string }> {
     return this.kaleyra_voice_service.outbound_call(
       dto.customer_number,
-      dto.target,
-      dto.bridge,
+      dto.play,
+      dto.campaign,
     );
   }
 
-  @Post('webhooks/kaleyra/callback')
+  @Get('webhooks/kaleyra/callback')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Receive Kaleyra call status callback events' })
+  @ApiOperation({ summary: 'Receive Kaleyra call status callback (GET with query params)' })
   @ApiOkResponse({ description: 'Callback acknowledged' })
   async kaleyra_callback(
-    @Body() body: Record<string, unknown>,
+    @Query() query: Record<string, string>,
   ): Promise<{ status: string }> {
-    this.logger.log(`Kaleyra callback received: ${JSON.stringify(body).slice(0, 200)}`);
+    this.logger.log(`Kaleyra callback received: ${JSON.stringify(query).slice(0, 300)}`);
 
     // Fire-and-forget: return 200 fast
     this.kaleyra_voice_service
-      .process_callback(body)
+      .process_callback(query)
       .catch((err) => {
         this.logger.error('Error processing Kaleyra callback', err);
       });
@@ -66,13 +66,13 @@ export class KaleyraVoiceController {
   }
 
   @Get('calls/logs')
-  @ApiOperation({ summary: 'Fetch Kaleyra call logs' })
+  @ApiOperation({ summary: 'Fetch Kaleyra click-to-call logs' })
   @ApiOkResponse({ description: 'Call logs from Kaleyra' })
   async get_call_logs(@Query() dto: CallLogsQueryDto): Promise<unknown> {
     return this.kaleyra_voice_service.get_call_logs({
-      start_time: dto.start_time,
-      end_time: dto.end_time,
-      status: dto.status,
+      from_date: dto.from_date,
+      to_date: dto.to_date,
+      call_to: dto.call_to,
       page: dto.page,
       limit: dto.limit,
     });
