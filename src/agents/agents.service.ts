@@ -28,6 +28,8 @@ export interface AgentRow {
   login_time: string | null;
   last_break_start: string | null;
   is_active: boolean | null;
+  role: string;
+  admin_id: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -74,6 +76,8 @@ export class AgentsService {
     if (dto.status !== undefined) insert_data.status = dto.status;
     if (dto.skills !== undefined) insert_data.skills = dto.skills;
     if (dto.is_active !== undefined) insert_data.is_active = dto.is_active;
+    if (dto.role !== undefined) insert_data.role = dto.role;
+    if (dto.admin_id !== undefined) insert_data.admin_id = dto.admin_id;
 
     const { data, error } = await client
       .from('agents')
@@ -106,6 +110,8 @@ export class AgentsService {
     if (dto.department) query = query.eq('department', dto.department);
     if (dto.status) query = query.eq('status', dto.status);
     if (dto.is_active !== undefined) query = query.eq('is_active', dto.is_active);
+    if (dto.role) query = query.eq('role', dto.role);
+    if (dto.admin_id) query = query.eq('admin_id', dto.admin_id);
     if (dto.search) {
       query = query.or(
         `name.ilike.%${dto.search}%,email.ilike.%${dto.search}%,phone.ilike.%${dto.search}%`,
@@ -158,6 +164,8 @@ export class AgentsService {
     if (dto.status !== undefined) update_data.status = dto.status;
     if (dto.skills !== undefined) update_data.skills = dto.skills;
     if (dto.is_active !== undefined) update_data.is_active = dto.is_active;
+    if (dto.role !== undefined) update_data.role = dto.role;
+    if (dto.admin_id !== undefined) update_data.admin_id = dto.admin_id;
 
     const { data, error } = await client
       .from('agents')
@@ -271,6 +279,52 @@ export class AgentsService {
     }
 
     return data as AgentRow;
+  }
+
+  async find_by_user_id(user_id: string): Promise<AgentRow> {
+    const { data, error } = await this.supabase_service
+      .getClient()
+      .from('agents')
+      .select('*')
+      .eq('user_id', user_id)
+      .single();
+
+    if (error || !data) {
+      throw new NotFoundException(`Agent with user_id ${user_id} not found`);
+    }
+
+    return data as AgentRow;
+  }
+
+  async find_by_email(email: string): Promise<AgentRow> {
+    const { data, error } = await this.supabase_service
+      .getClient()
+      .from('agents')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (error || !data) {
+      throw new NotFoundException(`Agent with email ${email} not found`);
+    }
+
+    return data as AgentRow;
+  }
+
+  async find_my_team(admin_id: string): Promise<AgentRow[]> {
+    const { data, error } = await this.supabase_service
+      .getClient()
+      .from('agents')
+      .select('*')
+      .eq('admin_id', admin_id)
+      .order('name', { ascending: true });
+
+    if (error) {
+      this.logger.error('Failed to fetch team members', error);
+      throw new InternalServerErrorException('Failed to fetch team members');
+    }
+
+    return (data || []) as AgentRow[];
   }
 
   async get_stats(id: string): Promise<AgentDailyStatsRow[]> {

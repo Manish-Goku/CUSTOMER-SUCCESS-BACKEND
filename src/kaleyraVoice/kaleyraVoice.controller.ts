@@ -13,14 +13,10 @@ import { ClickToCallDto } from './dto/clickToCall.dto.js';
 import { OutboundCallDto } from './dto/outboundCall.dto.js';
 import { CallLogsQueryDto } from './dto/callLogs.dto.js';
 import {
-  CallDashboardQueryDto,
-  CallDashboardOverviewDto,
-  AgentStatsDto,
-  DailyCallVolumeDto,
-  CallListResponseDto,
   SyncCallLogsDto,
   SyncResultDto,
 } from './dto/callDashboard.dto.js';
+import { KaleyraCdrDto } from './dto/kaleyraCdr.dto.js';
 
 @ApiTags('calls')
 @Controller()
@@ -87,42 +83,45 @@ export class KaleyraVoiceController {
     });
   }
 
-  // ── Sync & Dashboard ──
+  // ── CDR Webhook ──
+
+  @Post('webhooks/kaleyra/cdr')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Receive Kaleyra CDR (Call Detail Record) webhook push' })
+  @ApiOkResponse({ description: 'CDR acknowledged' })
+  async kaleyra_cdr_webhook(
+    @Body() dto: KaleyraCdrDto,
+  ): Promise<{ status: string }> {
+    this.logger.log(`Kaleyra CDR webhook received: ${JSON.stringify(dto).slice(0, 300)}`);
+
+    this.kaleyra_voice_service
+      .process_cdr_webhook(dto as Record<string, unknown>)
+      .catch((err) => {
+        this.logger.error('Error processing Kaleyra CDR webhook', err);
+      });
+
+    return { status: 'ok' };
+  }
+
+  // ── Sync Status ──
+
+  @Get('calls/sync-status')
+  @ApiOperation({ summary: 'Get auto-sync status and last synced time' })
+  @ApiOkResponse({ description: 'Sync status' })
+  async get_sync_status(): Promise<{
+    last_synced_at: string | null;
+    auto_sync_enabled: boolean;
+    sync_interval_minutes: number;
+  }> {
+    return this.kaleyra_voice_service.get_sync_status();
+  }
+
+  // ── Sync ──
 
   @Post('calls/sync')
-  @ApiOperation({ summary: 'Sync call logs from Kaleyra API into Supabase' })
+  @ApiOperation({ summary: 'Sync call logs from Kaleyra API into ivr_calls' })
   @ApiCreatedResponse({ type: SyncResultDto })
   async sync_call_logs(@Body() dto: SyncCallLogsDto): Promise<SyncResultDto> {
     return this.kaleyra_voice_service.sync_call_logs(dto.from_date, dto.to_date);
-  }
-
-  @Get('calls/dashboard/overview')
-  @ApiOperation({ summary: 'All call dashboard metrics (parallel fetch)' })
-  @ApiOkResponse({ type: CallDashboardOverviewDto })
-  async get_dashboard_overview(
-    @Query() dto: CallDashboardQueryDto,
-  ): Promise<CallDashboardOverviewDto> {
-    return this.kaleyra_voice_service.get_dashboard_overview(dto);
-  }
-
-  @Get('calls/dashboard/agent-stats')
-  @ApiOperation({ summary: 'Agent performance: calls answered, talk time, missed' })
-  @ApiOkResponse({ type: [AgentStatsDto] })
-  async get_agent_stats(@Query() dto: CallDashboardQueryDto): Promise<AgentStatsDto[]> {
-    return this.kaleyra_voice_service.get_agent_stats(dto);
-  }
-
-  @Get('calls/dashboard/daily-volume')
-  @ApiOperation({ summary: 'Daily call volume trend (IST)' })
-  @ApiOkResponse({ type: [DailyCallVolumeDto] })
-  async get_daily_volume(@Query() dto: CallDashboardQueryDto): Promise<DailyCallVolumeDto[]> {
-    return this.kaleyra_voice_service.get_daily_volume(dto);
-  }
-
-  @Get('calls/dashboard/call-list')
-  @ApiOperation({ summary: 'Paginated call log from Supabase (synced data)' })
-  @ApiOkResponse({ type: CallListResponseDto })
-  async get_call_list(@Query() dto: CallDashboardQueryDto): Promise<CallListResponseDto> {
-    return this.kaleyra_voice_service.get_call_list(dto);
   }
 }

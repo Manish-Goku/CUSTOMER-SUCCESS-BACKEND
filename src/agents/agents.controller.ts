@@ -40,6 +40,20 @@ export class AgentsController {
     return this.agents_service.find_all(dto);
   }
 
+  @Get('by-email/:email')
+  @ApiOperation({ summary: 'Get agent by email (for login profile lookup)' })
+  @ApiParam({ name: 'email', description: 'Agent email' })
+  async find_by_email(@Param('email') email: string) {
+    return this.agents_service.find_by_email(email);
+  }
+
+  @Get('by-user/:user_id')
+  @ApiOperation({ summary: 'Get agent by Supabase user_id' })
+  @ApiParam({ name: 'user_id', description: 'Supabase auth user UUID' })
+  async find_by_user_id(@Param('user_id', ParseUUIDPipe) user_id: string) {
+    return this.agents_service.find_by_user_id(user_id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a single agent by ID' })
   @ApiParam({ name: 'id', description: 'Agent UUID' })
@@ -95,5 +109,12 @@ export class AgentsController {
   @ApiParam({ name: 'id', description: 'Agent UUID' })
   async get_stats(@Param('id', ParseUUIDPipe) id: string) {
     return this.agents_service.get_stats(id);
+  }
+
+  @Get(':id/team')
+  @ApiOperation({ summary: 'Get agents reporting to this admin' })
+  @ApiParam({ name: 'id', description: 'Admin agent UUID' })
+  async get_team(@Param('id', ParseUUIDPipe) id: string) {
+    return this.agents_service.find_my_team(id);
   }
 }

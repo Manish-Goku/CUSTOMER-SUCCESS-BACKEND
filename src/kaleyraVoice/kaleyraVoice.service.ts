@@ -1,35 +1,58 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import axios from 'axios';
 import { SupabaseService } from '../supabase/supabase.service.js';
-import {
-  CallDashboardQueryDto,
-  CallDashboardOverviewDto,
-  CallVolumeDto,
-  AgentStatsDto,
-  DailyCallVolumeDto,
-  StatusBreakdownDto,
-  CallListResponseDto,
-  SyncResultDto,
-} from './dto/callDashboard.dto.js';
+import { SyncResultDto } from './dto/callDashboard.dto.js';
 
 // Legacy Kaleyra Voice API (api-voice.kaleyra.com)
 // All endpoints use POST /v1/ with a `method` form param
 // Docs: https://apidocs-voice.kaleyra.com/
 
 @Injectable()
-export class KaleyraVoiceService {
+export class KaleyraVoiceService implements OnModuleInit {
   private readonly logger = new Logger(KaleyraVoiceService.name);
   private readonly base_url = 'https://api-voice.kaleyra.com/v1/';
   private readonly api_key: string;
   private readonly callback_url: string;
+  private last_auto_synced_at: string | null = null;
 
   constructor(
     private readonly config_service: ConfigService,
     private readonly supabase_service: SupabaseService,
+    private readonly scheduler_registry: SchedulerRegistry,
   ) {
     this.api_key = this.config_service.getOrThrow<string>('KALEYRA_API_KEY');
     this.callback_url = this.config_service.getOrThrow<string>('KALEYRA_CALLBACK_URL');
+  }
+
+  onModuleInit() {
+    const interval_minutes = Number(this.config_service.get('KALEYRA_SYNC_INTERVAL_MINUTES', '10'));
+    const interval_ms = interval_minutes * 60_000;
+
+    const interval = setInterval(() => this.auto_sync_call_logs(), interval_ms);
+    this.scheduler_registry.addInterval('kaleyra-auto-sync', interval);
+
+    this.logger.log(`Kaleyra auto-sync scheduled every ${interval_minutes} minutes`);
+  }
+
+  private async auto_sync_call_logs(): Promise<void> {
+    this.logger.log('Kaleyra auto-sync: starting...');
+    try {
+      // Sync last 24h
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      const fmt = (d: Date) =>
+        `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+
+      const result = await this.sync_call_logs(fmt(yesterday), fmt(now));
+      this.last_auto_synced_at = new Date().toISOString();
+      this.logger.log(`Kaleyra auto-sync complete: ${result.synced} records`);
+    } catch (err) {
+      this.logger.error('Kaleyra auto-sync failed', err);
+    }
   }
 
   async click_to_call(
@@ -354,9 +377,10 @@ export class KaleyraVoiceService {
       if (rows.length === 0) break;
 
       const client = this.supabase_service.getClient();
+      const ivr_rows = rows.map((r) => this.kaleyra_to_ivr_row(r));
       const { error } = await client
-        .from('kaleyra_call_logs')
-        .upsert(rows, { onConflict: 'id' });
+        .from('ivr_calls')
+        .upsert(ivr_rows, { onConflict: 'call_id' });
 
       if (error) {
         this.logger.error(`Sync upsert failed (page ${page}): ${error.message}`);
@@ -374,193 +398,141 @@ export class KaleyraVoiceService {
     return { synced: total_synced, status: 'ok' };
   }
 
-  async get_dashboard_overview(dto: CallDashboardQueryDto): Promise<CallDashboardOverviewDto> {
-    const { start_date, end_date } = this.resolve_dates(dto);
 
-    const [call_volume, agent_stats, daily_volume, status_breakdown, last_synced_at] =
-      await Promise.all([
-        this.rpc_call_volume(start_date, end_date),
-        this.rpc_agent_stats(start_date, end_date),
-        this.rpc_daily_volume(start_date, end_date),
-        this.rpc_status_breakdown(start_date, end_date),
-        this.get_last_synced_at(),
-      ]);
+  // ── CDR Webhook ──
 
-    return { call_volume, agent_stats, daily_volume, status_breakdown, last_synced_at };
-  }
+  async process_cdr_webhook(payload: Record<string, unknown>): Promise<{ status: string }> {
+    const id = String(payload.id || payload.call_id || '');
+    if (!id) {
+      this.logger.warn('CDR webhook: missing id', payload);
+      return { status: 'skipped' };
+    }
 
-  async get_agent_stats(dto: CallDashboardQueryDto): Promise<AgentStatsDto[]> {
-    const { start_date, end_date } = this.resolve_dates(dto);
-    return this.rpc_agent_stats(start_date, end_date);
-  }
-
-  async get_daily_volume(dto: CallDashboardQueryDto): Promise<DailyCallVolumeDto[]> {
-    const { start_date, end_date } = this.resolve_dates(dto);
-    return this.rpc_daily_volume(start_date, end_date);
-  }
-
-  async get_call_list(dto: CallDashboardQueryDto): Promise<CallListResponseDto> {
-    const { start_date, end_date } = this.resolve_dates(dto);
-    const page = dto.page ?? 1;
-    const limit = dto.limit ?? 50;
-    const offset = (page - 1) * limit;
+    const row = {
+      id,
+      uniqid: payload.uniqid ? String(payload.uniqid) : null,
+      callfrom: String(payload.callfrom || payload.caller || ''),
+      callto: String(payload.callto || payload.receiver || ''),
+      start_time: this.parse_kaleyra_datetime(payload.start_time as string),
+      end_time: payload.end_time ? this.parse_kaleyra_datetime(payload.end_time as string) : null,
+      duration: Number(payload.duration) || 0,
+      billsec: Number(payload.billsec) || 0,
+      status: String(payload.status || 'UNKNOWN'),
+      location: payload.location ? String(payload.location) : null,
+      provider: payload.provider ? String(payload.provider) : null,
+      service: String(payload.service || 'Unknown'),
+      caller_id: payload.callerid ? String(payload.callerid) : null,
+      recording: payload.recording || payload.recordpath ? String(payload.recording || payload.recordpath) : null,
+      notes: payload.notes ? String(payload.notes) : null,
+      custom: payload.custom ? String(payload.custom) : null,
+      synced_at: new Date().toISOString(),
+    };
 
     const client = this.supabase_service.getClient();
-
-    let query = client
-      .from('kaleyra_call_logs')
-      .select('*', { count: 'exact' })
-      .gte('start_time', start_date)
-      .lt('start_time', end_date)
-      .order('start_time', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (dto.service) {
-      query = query.eq('service', dto.service);
-    }
-    if (dto.agent_number) {
-      query = query.eq('callto', dto.agent_number);
-    }
-
-    const { data, error, count } = await query;
+    const ivr_row = this.kaleyra_to_ivr_row(row);
+    const { error } = await client
+      .from('ivr_calls')
+      .upsert(ivr_row, { onConflict: 'call_id' });
 
     if (error) {
-      this.logger.error('get_call_list failed', error);
-      throw error;
+      this.logger.error(`CDR webhook upsert failed: ${error.message}`);
+      return { status: 'error' };
     }
+
+    this.logger.log(`CDR webhook: upserted call ${id}`);
+    return { status: 'ok' };
+  }
+
+  // ── Sync Status ──
+
+  async get_sync_status(): Promise<{
+    last_synced_at: string | null;
+    auto_sync_enabled: boolean;
+    sync_interval_minutes: number;
+  }> {
+    const db_last_synced = await this.get_last_synced_at();
+    const interval_minutes = Number(this.config_service.get('KALEYRA_SYNC_INTERVAL_MINUTES', '10'));
 
     return {
-      data: (data ?? []) as CallListResponseDto['data'],
-      total: count ?? 0,
-      page,
+      last_synced_at: this.last_auto_synced_at || db_last_synced,
+      auto_sync_enabled: true,
+      sync_interval_minutes: interval_minutes,
     };
-  }
-
-  // ── Private: date resolution ──
-
-  private resolve_dates(dto: CallDashboardQueryDto): { start_date: string; end_date: string } {
-    const now = new Date();
-
-    if (dto.range === 'custom') {
-      if (!dto.start_date || !dto.end_date) {
-        throw new BadRequestException('start_date and end_date required when range=custom');
-      }
-      return { start_date: dto.start_date, end_date: dto.end_date };
-    }
-
-    const end_date = now.toISOString();
-    let start: Date;
-
-    switch (dto.range) {
-      case 'today':
-        start = new Date(now);
-        start.setHours(0, 0, 0, 0);
-        break;
-      case '7d':
-        start = new Date(now);
-        start.setDate(start.getDate() - 7);
-        break;
-      case '30d':
-      default:
-        start = new Date(now);
-        start.setDate(start.getDate() - 30);
-        break;
-    }
-
-    return { start_date: start.toISOString(), end_date };
-  }
-
-  // ── Private: RPC wrappers ──
-
-  private async rpc_call_volume(start_date: string, end_date: string): Promise<CallVolumeDto> {
-    const client = this.supabase_service.getClient();
-    const { data, error } = await client.rpc('get_kaleyra_call_volume', {
-      p_start: start_date,
-      p_end: end_date,
-    });
-
-    if (error) {
-      this.logger.error('get_kaleyra_call_volume RPC failed', error);
-      throw error;
-    }
-
-    const row = Array.isArray(data) ? data[0] : data;
-    return {
-      total: Number(row?.total ?? 0),
-      incoming: Number(row?.incoming ?? 0),
-      forwarded: Number(row?.forwarded ?? 0),
-      click2call: Number(row?.click2call ?? 0),
-    };
-  }
-
-  private async rpc_agent_stats(start_date: string, end_date: string): Promise<AgentStatsDto[]> {
-    const client = this.supabase_service.getClient();
-    const { data, error } = await client.rpc('get_kaleyra_agent_stats', {
-      p_start: start_date,
-      p_end: end_date,
-    });
-
-    if (error) {
-      this.logger.error('get_kaleyra_agent_stats RPC failed', error);
-      throw error;
-    }
-
-    return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
-      agent_number: String(r.agent_number),
-      calls_answered: Number(r.calls_answered),
-      total_talk_seconds: Number(r.total_talk_seconds),
-      missed_calls: Number(r.missed_calls),
-    }));
-  }
-
-  private async rpc_daily_volume(start_date: string, end_date: string): Promise<DailyCallVolumeDto[]> {
-    const client = this.supabase_service.getClient();
-    const { data, error } = await client.rpc('get_kaleyra_daily_volume', {
-      p_start: start_date,
-      p_end: end_date,
-    });
-
-    if (error) {
-      this.logger.error('get_kaleyra_daily_volume RPC failed', error);
-      throw error;
-    }
-
-    return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
-      date: String(r.date),
-      incoming: Number(r.incoming),
-      forwarded: Number(r.forwarded),
-    }));
-  }
-
-  private async rpc_status_breakdown(start_date: string, end_date: string): Promise<StatusBreakdownDto[]> {
-    const client = this.supabase_service.getClient();
-    const { data, error } = await client.rpc('get_kaleyra_status_breakdown', {
-      p_start: start_date,
-      p_end: end_date,
-    });
-
-    if (error) {
-      this.logger.error('get_kaleyra_status_breakdown RPC failed', error);
-      throw error;
-    }
-
-    return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
-      status: String(r.status),
-      count: Number(r.count),
-    }));
   }
 
   private async get_last_synced_at(): Promise<string | null> {
     const client = this.supabase_service.getClient();
     const { data, error } = await client
-      .from('kaleyra_call_logs')
-      .select('synced_at')
-      .order('synced_at', { ascending: false })
+      .from('ivr_calls')
+      .select('updated_at')
+      .order('updated_at', { ascending: false })
       .limit(1)
       .single();
 
     if (error || !data) return null;
-    return data.synced_at as string;
+    return data.updated_at as string;
+  }
+
+  // ── Private: Kaleyra → ivr_calls mapper ──
+
+  private map_kaleyra_status(raw_status: string): string {
+    switch (raw_status.toUpperCase()) {
+      case 'ANSWER': return 'completed';
+      case 'NOANSWER': return 'missed';
+      case 'BUSY': return 'hangup';
+      case 'CANCEL': return 'hangup';
+      case 'FAILED':
+      case 'CONGESTION': return 'missed';
+      default: return 'waiting';
+    }
+  }
+
+  private map_kaleyra_direction(service: string): string {
+    switch (service) {
+      case 'Click2Call': return 'outbound';
+      case 'Incoming': return 'inbound';
+      case 'CallForward': return 'inbound';
+      default: return 'inbound';
+    }
+  }
+
+  private kaleyra_to_ivr_row(r: {
+    id: string;
+    callfrom: string;
+    callto: string;
+    start_time: string;
+    end_time?: string | null;
+    duration: number;
+    billsec: number;
+    status: string;
+    location?: string | null;
+    service: string;
+    recording?: string | null;
+    notes?: string | null;
+  }): Record<string, unknown> {
+    const direction = this.map_kaleyra_direction(r.service);
+    // For incoming/forwarded: callfrom = customer, callto = agent
+    // For click2call (outbound): callfrom = agent, callto = customer
+    const mobile_number = direction === 'outbound' ? r.callto : r.callfrom;
+    const agent_name = direction === 'outbound' ? r.callfrom : r.callto;
+
+    return {
+      call_id: r.id,
+      mobile_number: mobile_number || 'unknown',
+      department: 'general',
+      did_number: '8068921234',
+      status: this.map_kaleyra_status(r.status),
+      direction,
+      received_at: r.start_time,
+      ended_at: r.end_time || null,
+      answered_at: r.status.toUpperCase() === 'ANSWER' ? r.start_time : null,
+      duration_seconds: r.billsec || r.duration || null,
+      agent_name: agent_name || null,
+      state: r.location || null,
+      recording_url: r.recording || null,
+      remark: r.notes || null,
+      entry_date: r.start_time ? r.start_time.slice(0, 10) : null,
+    };
   }
 
   // ── Private: helpers ──

@@ -65,6 +65,16 @@ export class UpdateAgentDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @ApiPropertyOptional({ enum: ['super_admin', 'admin', 'agent'] })
+  @IsOptional()
+  @IsIn(['super_admin', 'admin', 'agent'])
+  role?: string;
+
+  @ApiPropertyOptional({ description: 'ID of the admin this agent reports to' })
+  @IsOptional()
+  @IsUUID()
+  admin_id?: string;
 }
 
 export class UpdateAgentStatusDto {

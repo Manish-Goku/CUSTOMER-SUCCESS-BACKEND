@@ -28,6 +28,16 @@ export class GetAgentsDto {
   @IsIn(AGENT_STATUSES)
   status?: string;
 
+  @ApiPropertyOptional({ enum: ['super_admin', 'admin', 'agent'], description: 'Filter by role' })
+  @IsOptional()
+  @IsIn(['super_admin', 'admin', 'agent'])
+  role?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by admin_id (get agents under a specific admin)' })
+  @IsOptional()
+  @IsString()
+  admin_id?: string;
+
   @ApiPropertyOptional({ description: 'Filter by is_active' })
   @IsOptional()
   @Transform(({ value }) => {
