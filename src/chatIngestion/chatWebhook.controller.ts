@@ -1,7 +1,6 @@
-import { Controller, Post, Body, HttpCode, Logger, Param } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, Logger, Param, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
 import { ChatIngestionService } from './chatIngestion.service.js';
-import { InteraktWebhookDto } from './dto/interaktWebhook.dto.js';
 import { NetcoreWebhookDto } from './dto/netcoreWebhook.dto.js';
 
 @ApiTags('webhooks')
@@ -18,9 +17,10 @@ export class ChatWebhookController {
   @ApiOperation({ summary: 'Receive Interakt/WhatsApp webhook events' })
   @ApiOkResponse({ description: 'Webhook acknowledged' })
   async handle_interakt_webhook(
-    @Body() body: InteraktWebhookDto,
+    @Req() req: any,
   ): Promise<{ status: string }> {
-    this.logger.log(`Received Interakt webhook: ${body.type}`);
+    const body = req.body;
+    this.logger.log(`[RAW INTERAKT WEBHOOK] ${JSON.stringify(body)}`);
 
     // Fire-and-forget: return 200 fast to avoid retries
     this.chat_ingestion_service.process_webhook(body).catch((err) => {
@@ -36,9 +36,10 @@ export class ChatWebhookController {
   @ApiOkResponse({ description: 'Webhook acknowledged' })
   async handle_interact_webhook(
     @Param('slug') slug: string,
-    @Body() body: InteraktWebhookDto,
+    @Req() req: any,
   ): Promise<{ status: string }> {
-    this.logger.log(`Received Interact webhook for provider: ${slug}`);
+    const body = req.body;
+    this.logger.log(`[RAW INTERACT WEBHOOK] slug=${slug} payload=${JSON.stringify(body)}`);
 
     this.chat_ingestion_service
       .process_interact_webhook(slug, body)

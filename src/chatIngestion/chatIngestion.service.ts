@@ -8,7 +8,8 @@ import { InteraktService } from './interakt.service.js';
 import { NetcoreService } from './netcore.service.js';
 import { ChatAiService } from './chatAi.service.js';
 import { ChatGateway } from './chatGateway.gateway.js';
-import { InteraktWebhookDto } from './dto/interaktWebhook.dto.js';
+// InteraktWebhookDto kept for reference; webhooks now accept raw body
+// import { InteraktWebhookDto } from './dto/interaktWebhook.dto.js';
 import { NetcoreWebhookDto } from './dto/netcoreWebhook.dto.js';
 import { SendMessageDto } from './dto/sendMessage.dto.js';
 import { GetConversationsDto } from './dto/getConversations.dto.js';
@@ -36,7 +37,7 @@ export class ChatIngestionService {
 
   async process_interact_webhook(
     slug: string,
-    payload: InteraktWebhookDto,
+    payload: Record<string, unknown>,
   ): Promise<void> {
     const client = this.supabase_service.getClient();
 
@@ -55,17 +56,46 @@ export class ChatIngestionService {
   }
 
   async process_webhook(
-    payload: InteraktWebhookDto,
+    payload: Record<string, unknown>,
     channel: string = 'interakt',
   ): Promise<void> {
-    switch (payload.type) {
-      case 'message_received':
-        return this.process_message_received(payload.data, channel);
-      case 'workflow_response_update':
-        return this.process_workflow_response(payload.data, channel);
-      default:
-        this.logger.log(`Ignoring webhook event type: ${payload.type}`);
+    // Interact wraps payload in "body" with no "type" field.
+    // Legacy Interakt has "type" at top level.
+    const has_type = typeof payload.type === 'string';
+    const body = (payload.body as Record<string, unknown>) || null;
+
+    if (has_type) {
+      // Legacy format: { type: "message_received", data: { ... } }
+      switch (payload.type) {
+        case 'message_received':
+          return this.process_message_received(
+            payload.data as Record<string, unknown>,
+            channel,
+          );
+        case 'workflow_response_update':
+          return this.process_workflow_response(
+            payload.data as Record<string, unknown>,
+            channel,
+          );
+        default:
+          this.logger.log(`Ignoring webhook event type: ${payload.type}`);
+          return;
+      }
     }
+
+    if (body) {
+      // New Interact format: { body: { customer: {...}, message: {...} } }
+      if (body.message && body.customer) {
+        this.logger.log('Detected Interact message_received (body format)');
+        return this.process_message_received(body, channel);
+      }
+      if (body.data && body.customer_number) {
+        this.logger.log('Detected Interact workflow_response (body format)');
+        return this.process_workflow_response(body, channel);
+      }
+    }
+
+    this.logger.warn(`Unrecognized webhook format: ${JSON.stringify(payload).slice(0, 200)}`);
   }
 
   // --- Structure 1: message_received ---
@@ -484,6 +514,59 @@ export class ChatIngestionService {
     return 'text';
   }
 
+  // --- Send via dynamic Interact provider API ---
+
+  private async send_via_interact_api(
+    phone_number: string,
+    message_text: string,
+    api_key: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    const url = 'https://api.interakt.ai/v1/public/message/';
+
+    const body = {
+      countryCode: phone_number.startsWith('91')
+        ? '+91'
+        : `+${phone_number.slice(0, 2)}`,
+      phoneNumber: phone_number.startsWith('91')
+        ? phone_number.slice(2)
+        : phone_number,
+      type: 'Text',
+      data: {
+        message: message_text,
+      },
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${api_key}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const response_data = await response.json();
+
+      if (!response.ok) {
+        this.logger.error(
+          `Interact API error (${response.status}) for provider`,
+          response_data,
+        );
+        return { success: false, error: `Interact API returned ${response.status}` };
+      }
+
+      this.logger.log(`Message sent to ${phone_number} via dynamic interact provider`);
+      return { success: true };
+    } catch (err) {
+      this.logger.error(`Failed to send via interact provider to ${phone_number}`, err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      };
+    }
+  }
+
   // --- Agent Reply ---
 
   async send_reply(
@@ -515,10 +598,29 @@ export class ChatIngestionService {
         conv.phone_number,
         dto.content,
       );
-    } else {
+    } else if (channel === 'interakt') {
+      // Legacy interakt — uses env INTERAKT_API_KEY
       send_result = await this.interakt_service.send_message(
         conv.phone_number,
         dto.content,
+      );
+    } else {
+      // Dynamic interact provider — look up API key from interact_providers
+      const { data: provider } = await client
+        .from('interact_providers')
+        .select('api_key')
+        .eq('slug', channel)
+        .eq('is_active', true)
+        .single();
+
+      if (!provider?.api_key) {
+        throw new Error(`No active interact provider found for channel: ${channel}`);
+      }
+
+      send_result = await this.send_via_interact_api(
+        conv.phone_number,
+        dto.content,
+        provider.api_key,
       );
     }
 
