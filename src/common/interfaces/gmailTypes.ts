@@ -31,6 +31,7 @@ export interface SupportEmailRecord {
   imap_port: number;
   imap_user: string | null;
   imap_password: string | null;
+  department: string | null;
   last_synced_uid: number;
   last_synced_at: string | null;
   created_at: string;

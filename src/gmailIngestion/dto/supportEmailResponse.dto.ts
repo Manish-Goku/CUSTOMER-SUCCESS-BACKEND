@@ -13,6 +13,9 @@ export class SupportEmailResponseDto {
   @ApiProperty({ example: true })
   is_active: boolean;
 
+  @ApiPropertyOptional({ example: 'support' })
+  department: string | null;
+
   @ApiPropertyOptional({ example: '2026-02-22T10:30:00.000Z' })
   last_synced_at: string | null;
 

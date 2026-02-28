@@ -22,4 +22,12 @@ export class UpdateSupportEmailDto {
   @IsOptional()
   @IsString()
   imap_password?: string;
+
+  @ApiPropertyOptional({
+    example: 'support',
+    description: 'Default department for emails from this mailbox (overrides AI classification)',
+  })
+  @IsOptional()
+  @IsString()
+  department?: string;
 }

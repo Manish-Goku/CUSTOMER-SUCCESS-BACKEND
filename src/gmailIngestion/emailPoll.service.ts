@@ -88,6 +88,11 @@ export class EmailPollService {
           parsed.from_address,
         );
 
+        // Use mailbox department if set, otherwise fall back to AI classification
+        const team = mailbox.department && mailbox.department !== 'general'
+          ? mailbox.department
+          : ai_result.suggested_team;
+
         const { data: inserted, error: insert_error } = await supabase
           .from('emails')
           .insert({
@@ -107,7 +112,7 @@ export class EmailPollService {
             attachments: parsed.attachments,
             internal_date: parsed.internal_date?.toISOString() || null,
             summary: ai_result.summary,
-            suggested_team: ai_result.suggested_team,
+            suggested_team: team,
           })
           .select()
           .single();

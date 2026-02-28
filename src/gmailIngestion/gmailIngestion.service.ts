@@ -55,6 +55,7 @@ export class GmailIngestionService {
       .insert({
         email_address: dto.email_address,
         display_name: dto.display_name || null,
+        department: dto.department || 'general',
         imap_host: 'imap.gmail.com',
         imap_port: 993,
         imap_user: dto.email_address,
@@ -126,6 +127,7 @@ export class GmailIngestionService {
     if (dto.display_name !== undefined) update_data.display_name = dto.display_name;
     if (dto.is_active !== undefined) update_data.is_active = dto.is_active;
     if (dto.imap_password !== undefined) update_data.imap_password = encrypt(dto.imap_password);
+    if (dto.department !== undefined) update_data.department = dto.department;
 
     const { data: updated, error: update_error } = await client
       .from('support_emails')
@@ -356,6 +358,7 @@ export class GmailIngestionService {
       email_address: record.email_address,
       display_name: record.display_name,
       is_active: record.is_active,
+      department: record.department,
       last_synced_at: record.last_synced_at,
       created_at: record.created_at,
       updated_at: record.updated_at,

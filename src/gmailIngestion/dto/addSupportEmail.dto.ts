@@ -18,6 +18,14 @@ export class AddSupportEmailDto {
   @IsString()
   display_name?: string;
 
+  @ApiPropertyOptional({
+    example: 'support',
+    description: 'Default department for emails from this mailbox (overrides AI classification)',
+  })
+  @IsOptional()
+  @IsString()
+  department?: string;
+
   @ApiProperty({
     example: 'abcd efgh ijkl mnop',
     description: 'Gmail App Password (generate from Google Account → Security → App Passwords)',
